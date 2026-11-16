@@ -1,0 +1,38 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Tabela para guardar o histórico dos sensores enviados pelo ESP32
+model Telemetria {
+  id         Int      @id @default(autoincrement())
+  temp       Float
+  pres       Float
+  energy     Float
+  criadoEm   DateTime @default(now())
+}
+
+// Tabela para guardar os comandos de Infravermelho aprendidos
+// Tabela para guardar os códigos de Infravermelho que você aprendeu
+model ComandoIR {
+  id         Int      @id @default(autoincrement())
+  device     String   // "ac" ou "tv"
+  nome       String   @unique // "ac_on", "ac_off", "tv_on"
+  codigoHex  String   // O código bruto que o ESP32 leu
+}
+
+// Tabela para gerenciar automações inteligentes por software
+model Automacao {
+  id         Int      @id @default(autoincrement())
+  nome       String   // "Ligar Ar se esquentar"
+  sensor     String   // "temp" ou "energy"
+  gatilho    String   // "maior_que" ou "menor_que"
+  valor      Float    // 25.0
+  acaoDevice String   // "ac"
+  acaoComando String  // "ac_on"
+  ativa      Boolean  @default(true)
+}
+

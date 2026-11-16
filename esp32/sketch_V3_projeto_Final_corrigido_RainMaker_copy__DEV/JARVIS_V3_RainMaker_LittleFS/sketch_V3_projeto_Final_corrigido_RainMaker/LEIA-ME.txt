@@ -1,0 +1,29 @@
+JARVIS V3 - ESP32 Dev Module - Flash 4 MB
+Tabela personalizada: RainMaker + LittleFS
+
+ARQUIVOS
+- sketch_V3_projeto_Final_corrigido_RainMaker.ino
+- partitions.csv
+
+INSTALACAO
+1. Faça uma cópia de segurança do projeto e dos arquivos que estiverem no LittleFS, especialmente antes de alterar a tabela de partições.
+2. Mantenha o arquivo partitions.csv na MESMA PASTA do arquivo .ino principal.
+3. No Arduino IDE, selecione ESP32 Dev Module e Flash Size 4MB.
+4. Compile e grave o projeto normalmente. O Arduino-ESP32 atual usa o partitions.csv da pasta do sketch como tabela personalizada.
+5. Confira no log de compilação se a tabela personalizada foi usada.
+6. Depois de gravar, abra o Monitor Serial em 115200 e verifique se o erro 'NVS Flash init failed' desapareceu.
+
+LAYOUT (4 MB = 0x400000)
+- nvs:       0x9000   - 0xDFFF    (20 KiB)
+- otadata:   0xE000   - 0xFFFF    (8 KiB)
+- ota_0:     0x10000  - 0x30FFFF  (3 MiB; sem segundo slot OTA)
+- spiffs:    0x310000 - 0x3E9FFF  (872 KiB; partição usada por LittleFS)
+- fctry:     0x3EA000 - 0x3EFFFF  (24 KiB; NVS de fábrica RainMaker)
+- coredump:  0x3F0000 - 0x3FFFFF (64 KiB)
+
+OBSERVACOES IMPORTANTES
+- Mantém o tamanho máximo do aplicativo em 3 MiB, igual ao Huge APP, mas reduz a área LittleFS de aproximadamente 960 KiB para 872 KiB para abrir espaço para fctry e coredump do RainMaker.
+- Há apenas um slot de aplicativo (ota_0); não há OTA A/B nesta tabela.
+- O projeto chama LittleFS.begin(false), sem formatacao automatica. Se o filesystem nao montar, o sketch informa o erro e para, preservando os dados para diagnostico; nao formate antes de fazer backup.
+- A tabela foi calculada para ESP32 clássico com flash de 4 MB. Não use em ESP32-S3/C3 ou placas com outro tamanho de flash.
+- A tabela resolve a ausência das partições RainMaker exigidas pelo layout, mas a compilação e o funcionamento ainda precisam ser testados na placa real.

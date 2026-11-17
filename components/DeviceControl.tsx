@@ -14,31 +14,37 @@ export default function DeviceControl({ title, type }: DeviceProps) {
     setStatus(action === 'send' ? `Disparando comando ${command}...` : `Modo aprender ativo para ${command}...`);
     
     try {
-      if (action === 'send') {
-        const response = await fetch('/api/control', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            device: type, 
-            command: command 
-          }),
-        });
+      // ✅ CORRIGIDO: O fetch agora roda tanto para 'send' quanto para 'learn'
+      const response = await fetch('/api/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          device: type, 
+          command: command,
+          action: action //// 👈 Passa "learn" ou "send" dinamicamente conforme o botão clicado! Envia "learn" ou "send" 
+          //dinamicamente para o Back-End
+        }),
+      });
 
-        if (response.ok) {
+      if (response.ok) {
+        if (action === 'send') {
           setStatus(`Comando ${command} disparado com sucesso!`);
-        } else if (response.status === 404) {
-          setStatus(`Erro: Comando ${command} não cadastrado no PostgreSQL.`);
         } else {
-          setStatus('Erro ao processar comando no servidor.');
+          setStatus(`✓ Comando ${command} aprendido e gravado no PostgreSQL!`);
         }
+      } else if (response.status === 404) {
+        setStatus(`Erro: Comando ${command} não cadastrado no PostgreSQL.`);
+      } else if (response.status === 408) {
+        setStatus(`⚠️ Tempo esgotado! O ESP32 não detectou nenhum controle remoto.`);
       } else {
-        // Lógica para rota de aprendizado futuro
-        setStatus(`Modo aprender ativo para ${command}.`);
+        setStatus('Erro ao processar comando no servidor.');
       }
+
     } catch (error) {
-      console.error("Erro ao enviar comando IR:", error);
+      console.error("Erro na comunicação com a API de controle:", error);
       setStatus('Falha na comunicação com a API.');
     }
+
 
     setTimeout(() => setStatus(null), 3000);
   };

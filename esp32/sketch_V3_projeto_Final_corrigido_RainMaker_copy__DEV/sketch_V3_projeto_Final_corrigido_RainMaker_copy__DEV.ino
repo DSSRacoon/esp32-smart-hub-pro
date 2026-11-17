@@ -465,14 +465,28 @@ void updateLCD(){
   static unsigned long timerResetDisplay = 0;
   if (millis() - timerResetDisplay > 3600000) { // A cada 1 hora (3600000 ms)
     timerResetDisplay = millis();
-    lcd.init(); // Dá um soft-reset no chip do display para reajustar o sincronismo
-    lcd.backlight();
+     // 💡 PASSO CRÍTICO: Guarda o estado atual dos relés/backlight antes de resetar
+    // Se o seu relayPins ou o estado do backlight do RainMaker estiver ativo:
+    bool backlightEstavaLigado = true;
+    if (backlightSwitch) {
+      // Lê o estado real do parâmetro do RainMaker
+      backlightEstavaLigado = backlightSwitch->getParamVal("Power").val.b; 
+    }
+
+    lcd.init(); // Soft-reset físico do display
+    
+    // Aplica o backlight apenas se ele realmente deveria estar ligado!
+    if (backlightEstavaLigado) {
+      lcd.backlight();
+    } else {
+      lcd.noBacklight();
+    }
     // Recria os caracteres especiais para eles não sumirem após o reset
     lcd.createChar(0, sol);
     lcd.createChar(1, nuvem);
     lcd.createChar(2, chuva);
     lcd.createChar(3, raio);
-    Serial.println("[DISPLAY] Reset preventivo de sincronismo I2C executado.");
+    Serial.println("[DISPLAY] Reset preventivo executado respeitando o Backlight.");
   }
 }
 
@@ -568,7 +582,6 @@ void sendIRCommand(const String &cmd) {
   decodeAndSendIR(codeStr);
 }
 
-//////////Teste Rápido
 void write_callback(Device *device, Param *param, const param_val_t val, void *priv_data, write_ctx_t *ctx)
 {
     const char *name = device->getDeviceName();
@@ -654,11 +667,8 @@ const char* calcularStatusTempo( float pAtual, float deltaP) {
 // INTEGRACAO NEXT.JS FULL-STACK - ADICIONE ESTAS FUNÇÕES NO SEU CÓDIGO
 // =========================================================================================
 
-// aprender comando IR
-// Substitua a sua função learnCommand() antiga por esta:
+// VERSÃO INTEGRADA AO NEXT.JS (Devolve o código capturado via HTTP)
 void learnCommand() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  // Estrutura de resultados limpa
   results.decode_type = UNKNOWN;
   results.value = 0;
   results.rawlen = 0;
@@ -667,12 +677,12 @@ void learnCommand() {
   delay(200); 
   yield();
 
-  Serial.println("[IR] Aguardando sinal IR por 10s via painel físico...");
+  Serial.println("[IR] Aguardando sinal IR por 10s...");
   unsigned long timeout = millis();
   while (!irrecv.decode(&results)) {
     if (millis() - timeout > 10000) { 
       irrecv.resume(); 
-      Serial.println("[IR] Tempo limite esgotado.");
+      server.send(408, "text/plain", "Timeout"); // Avisa o Next.js que estourou o tempo
       return;
     }
     delay(10);
@@ -680,18 +690,28 @@ void learnCommand() {
   }
 
   String data = formatIRCode(results);
-  
-  // Como exemplo, ele assume o aprendizado sequencial ou debug via Serial
-  Serial.println("[IR] Sinal Aprendido com Sucesso: " + data);
+  Serial.println("[IR] Capturado: " + data);
   irrecv.resume();
+
+  // Envia o código capturado de volta para o Next.js salvar no PostgreSQL!
+  server.send(200, "text/plain", data);
 }
 
 // enviar comando IR
-// Substitua a sua função sendCommand() antiga por esta:
+// VERSÃO REAL DE DISPARO INFRAVERMELHO
 void sendCommand() {
-  // Lógica de envio migrada para a função global automatizada decodeAndSendIR
-  Serial.println("[IR] Executando rotina de disparo via automação.");
+  if (server.hasArg("code")) {
+    String codigoRecebido = server.arg("code");
+    Serial.println("[IR] Disparando codigo recebido: " + codigoRecebido);
+    
+    decodeAndSendIR(codigoRecebido); // Dispara o LED físico
+    
+    server.send(200, "text/plain", "Sinal disparado!");
+    return;
+  }
+  server.send(400, "text/plain", "Faltou o parametro code");
 }
+
 /*****************************************************************************************
  Salvar configuração em arquivo flash(Agora no prefs)
  *****************************************************************************************
@@ -726,7 +746,6 @@ void loadConfig() {
     Serial.println("[NVS] Erro ao acessar a memoria NVS para carregar configuracao.");
     return;
   }
-
   // O segundo parametro "" e o valor padrao caso a chave nao exista
   ac_on  = prefs.getString("ac_on", "");
   ac_off = prefs.getString("ac_off", "");
@@ -750,7 +769,6 @@ void handleReload() {
   loadConfig();
 }
 
-// Substitua a sua função antiga exatamente por esta versão leve e segura:
 void handleSensorAPI() {
   char jsonBuffer[128]; // Removido o 'static' e ajustado o tamanho ideal
   snprintf(jsonBuffer, sizeof(jsonBuffer),
@@ -780,8 +798,6 @@ void handleRelay() {
   }
   server.send(400, "text/plain", "Erro ID");
 }
-
-
 
 void SysProvEvent(arduino_event_t *sys_event) {
 
@@ -831,8 +847,6 @@ void SysProvEvent(arduino_event_t *sys_event) {
       break;
   }
 }
-
-
 
 /*****************************************************************************************
  * SETUP
@@ -1039,7 +1053,8 @@ void setup()
   // Rota para o Next.js mandar ligar/desligar os relés na bancada
   server.on("/relay", handleRelay);        
   // Rota para o Next.js mandar disparar os comandos de Ar/TV
-  server.on("/send", sendCommand);         
+  server.on("/send", sendCommand);     
+  server.on("/learn", learnCommand); // ✅ Garanta que esta linha está ativa!    
   server.begin(); // Inicializa o servidor web de forma enxuta e leve
   Serial.println("✓ Servidor Web do Hub ativado para comandos do Next.js!");
 
@@ -1128,8 +1143,9 @@ void loop()
 
             // ✅ CORRIGIDO: Copia resultado const char* para array fixo (evita vazamento de memória)
             // 1. CHAMA A FUNÇÃO E GUARDA O TEXTO (o "return")
-            //strncpy(statusAtual, calcularStatusTempo(pAtual, deltaP), 24);
-            //statusAtual[24] = '\0';  // Garante null terminator
+            // ✅ DESCOMENTADO: Atualiza a previsão e joga para o LCD de hora em hora!
+            strncpy(statusAtual, calcularStatusTempo(pAtual, deltaP), 24);
+            statusAtual[24] = '\0';  // Garante null terminator
 
             }
             /*************************************************/

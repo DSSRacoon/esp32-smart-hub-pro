@@ -462,33 +462,45 @@ void updateLCD(){
     }
   }
   // Adicione isto bem na última linha, antes de fechar a chave "}" da função updateLCD():
+    // ============================================================================
+  // VERSÃO DEFINITIVA: EXTRAÇÃO USANDO A FUNÇÃO GLOBAL DO RAINMAKER
+  // ============================================================================
   static unsigned long timerResetDisplay = 0;
-  if (millis() - timerResetDisplay > 3600000) { // A cada 1 hora (3600000 ms)
+  if (millis() - timerResetDisplay > 3600000) { // A cada 1 hora
     timerResetDisplay = millis();
-     // 💡 PASSO CRÍTICO: Guarda o estado atual dos relés/backlight antes de resetar
-    // Se o seu relayPins ou o estado do backlight do RainMaker estiver ativo:
+    
     bool backlightEstavaLigado = true;
     if (backlightSwitch) {
-      // Lê o estado real do parâmetro do RainMaker
-      backlightEstavaLigado = backlightSwitch->getParamVal("Power").val.b; 
+      // 1. Busca o ponteiro do parâmetro utilizando a sugestão do compilador
+      param_handle_t *param_handle = backlightSwitch->getParamByName("Power");
+      if (param_handle != nullptr) {
+        // 2. Usa a função global oficial da Espressif para capturar o valor estruturado
+        param_val_t *param_val = esp_rmaker_param_get_val(param_handle);
+        if (param_val != nullptr) {
+          backlightEstavaLigado = param_val->val.b; // Extrai o booleano de forma limpa!
+        }
+      }
     }
 
     lcd.init(); // Soft-reset físico do display
     
-    // Aplica o backlight apenas se ele realmente deveria estar ligado!
+    // Reaplica o estado real da iluminação conforme o seu comando
     if (backlightEstavaLigado) {
       lcd.backlight();
     } else {
       lcd.noBacklight();
     }
-    // Recria os caracteres especiais para eles não sumirem após o reset
+
+    // Recria os caracteres especiais para não sumirem após o reset
     lcd.createChar(0, sol);
     lcd.createChar(1, nuvem);
     lcd.createChar(2, chuva);
     lcd.createChar(3, raio);
     Serial.println("[DISPLAY] Reset preventivo executado respeitando o Backlight.");
   }
-}
+} // Chave final da função updateLCD()
+
+
 
 /*****************************************************************************************
  * CALLBACK RELÉS
